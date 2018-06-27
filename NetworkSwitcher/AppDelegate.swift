@@ -20,7 +20,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         if let button = statusItem.button {
             button.image = NSImage(named:NSImage.Name("StatusBarButtonImage"))
-//            button.action = #selector(setWifi(_:))
+            //            button.action = #selector(setWifi(_:))
         }
         constructMenu()
     }
@@ -34,54 +34,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate {
 
-    @objc func changeOrder(_ sender: Any?) {
-        var args = [ordernetworkservices]
-        let list = self.listNetwork()
-        for item in list.reversed() {
-            args.append(item)
-        }
-
-        admin()
-        let result = self.bash(command: "networksetup", arguments: args)
-        print(args)
-        print(result)
-
-        print("\n", self.listNetwork())
-
+    @objc func switchLocation(_ sender: NSMenuItem) {
+        self.setNetworkLocation(location: sender.title)
     }
-
-    @objc func switchLocation(_ sender: Any?) {
-//        let la = LAContext()
-//        la.evaluatePolicy(LAPolicy.deviceOwnerAuthentication, localizedReason: "Password") { (result, error) in
-
-
-        var args = [self.switchtolocation]
-        let list = self.listNetwork()
-        args.append(list.last!)
-        admin()
-
-        let output = self.bash(command: "networksetup", arguments: args)
-        print(args)
-        print(output)
-
-        print("\n", self.listNetwork())
-//        }
-
-
-    }
-
-    func listNetwork() -> [String] {
-        let result = self.bash(command: "networksetup", arguments: [listParam])
-        let list = result.split(separator: "\n").map{ String($0) }
-        //        list.remove(at: 0)
-        return list
-    }
-
 
     func constructMenu() {
         let menu = NSMenu()
 
-        let result = self.getNetworkNames()
+        let result = self.getCurrentNetworkSetServicesNames()
         for item in result {
             menu.addItem(NSMenuItem(title: String(item), action: #selector(AppDelegate.switchLocation(_:)), keyEquivalent: ""))
         }
@@ -97,7 +57,45 @@ extension AppDelegate {
 
 extension AppDelegate {
 
-    func getNetworkNames() -> [String] {
+    func setNetworkLocation(location:String){
+        guard let preferences = SCPreferencesCreate(nil, "Erkan" as CFString, nil) else {
+            fatalError("No")
+        }
+
+//        SCPreferencesLock(preferences, true)
+
+        guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
+            fatalError("No set")
+        }
+        guard let order = SCNetworkSetGetServiceOrder(networkSet) else {
+            fatalError("No order")
+        }
+
+        print("Network Set:",SCNetworkSetGetName(networkSet))
+
+        let mutableOrder : NSMutableArray = (order as NSArray).mutableCopy() as! NSMutableArray
+
+        let obj = mutableOrder.object(at: 1)
+        mutableOrder.removeObject(at: 1)
+        mutableOrder.insert(obj , at: 0)
+        print("Initial Order:",order)
+        print("Changed Order:",mutableOrder)
+
+        assert(SCNetworkSetSetServiceOrder(networkSet, mutableOrder) == true)
+
+//        assert(SCPreferencesUnlock(preferences) == true)
+        assert(SCPreferencesCommitChanges(preferences) == true)
+        assert(SCPreferencesApplyChanges(preferences) == true)
+
+
+
+
+        //        }
+
+
+    }
+
+    func getNetworkLocationNames() -> [String] {
         guard let preferences = SCPreferencesCreate(nil, "Erkan" as CFString, nil) else {
             fatalError("No")
         }
@@ -113,8 +111,41 @@ extension AppDelegate {
                 print("no name")
                 continue
             }
-//            let order = SCNetworkSetGetServiceOrder(networkSet)
+            //            let order = SCNetworkSetGetServiceOrder(networkSet)
             //        let a = SCNetworkInterfaceCopyAll()
+
+            names.append(name as String)
+
+        }
+
+        return names
+    }
+
+
+    func getCurrentNetworkSetServicesNames() -> [String] {
+        guard let preferences = SCPreferencesCreate(nil, "Erkan" as CFString, nil) else {
+            fatalError("No")
+        }
+        guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
+            fatalError("No")
+        }
+
+        print("CurrentSetName:",SCNetworkSetGetName(networkSet))
+
+        guard let networkServices = SCNetworkSetCopyServices(networkSet) else {
+            fatalError("No")
+        }
+
+        let length = CFArrayGetCount(networkServices)
+        var names = [String]()
+        for index in 0...length-1 {
+            let networkService = unsafeBitCast(CFArrayGetValueAtIndex(networkServices, index), to: SCNetworkService.self)
+
+            guard let name = SCNetworkServiceGetName(networkService) else {
+                print("no name")
+                continue
+            }
+
             names.append(name as String)
 
         }
@@ -123,57 +154,56 @@ extension AppDelegate {
     }
 
 }
+/**
+ extension AppDelegate {
 
-extension AppDelegate {
+ func shell(launchPath: String, arguments: [String]) -> String {
 
-    func shell(launchPath: String, arguments: [String]) -> String {
+ let task = Process()
+ task.launchPath = launchPath
+ task.arguments = arguments
 
+ let pipe = Pipe()
+ task.standardOutput = pipe
+ task.launch()
 
+ let data = pipe.fileHandleForReading.readDataToEndOfFile()
+ let output = String(data: data, encoding: String.Encoding.utf8)!
+ if output.count > 0 {
+ //remove newline character.
+ let lastIndex = output.index(before: output.endIndex)
+ return String(output[output.startIndex ..< lastIndex])
+ }
+ return output
+ }
 
-        let task = Process()
-        task.launchPath = launchPath
-        task.arguments = arguments
+ func admin() {
 
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.launch()
+ let rightname = "sys.openfile.readonly./tmp/cantread.txt"
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: String.Encoding.utf8)!
-        if output.count > 0 {
-            //remove newline character.
-            let lastIndex = output.index(before: output.endIndex)
-            return String(output[output.startIndex ..< lastIndex])
-        }
-        return output
-    }
+ var status: OSStatus
 
-    func admin() {
+ var authref: AuthorizationRef?
+ let flags = AuthorizationFlags([.interactionAllowed, .extendRights, .preAuthorize])
+ status = AuthorizationCreate(nil, nil, flags, &authref)
+ assert(status == errAuthorizationSuccess)
 
-        let rightname = "sys.openfile.readonly./tmp/cantread.txt"
+ var item = AuthorizationItem(name: rightname, valueLength: 0, value: nil, flags: 0)
+ var rights = AuthorizationRights(count: 1, items: &item)
+ status = AuthorizationCopyRights(authref!, &rights, nil, flags, nil)
+ assert(status == errAuthorizationSuccess)
 
-        var status: OSStatus
+ var token = AuthorizationExternalForm()
+ status = AuthorizationMakeExternalForm(authref!, &token)
+ assert(status == errAuthorizationSuccess)
 
-        var authref: AuthorizationRef?
-        let flags = AuthorizationFlags([.interactionAllowed, .extendRights, .preAuthorize])
-        status = AuthorizationCreate(nil, nil, flags, &authref)
-        assert(status == errAuthorizationSuccess)
+ }
 
-        var item = AuthorizationItem(name: rightname, valueLength: 0, value: nil, flags: 0)
-        var rights = AuthorizationRights(count: 1, items: &item)
-        status = AuthorizationCopyRights(authref!, &rights, nil, flags, nil)
-        assert(status == errAuthorizationSuccess)
+ func bash(command: String, arguments: [String]) -> String {
+ let whichPathForCommand = shell(launchPath: "/bin/bash", arguments: [ "-l", "-c", "which \(command)" ])
+ return shell(launchPath: whichPathForCommand, arguments: arguments)
+ }
 
-        var token = AuthorizationExternalForm()
-        status = AuthorizationMakeExternalForm(authref!, &token)
-        assert(status == errAuthorizationSuccess)
+ }
 
-    }
-
-    func bash(command: String, arguments: [String]) -> String {
-        let whichPathForCommand = shell(launchPath: "/bin/bash", arguments: [ "-l", "-c", "which \(command)" ])
-        return shell(launchPath: whichPathForCommand, arguments: arguments)
-    }
-
-}
-
+ **/
