@@ -13,11 +13,13 @@ import Security.Authorization
 
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate {
+    let appName = "io.ervanux.NetworkSwitcher"
+    var preferences : SCPreferences?
 
     let statusItem = NSStatusBar.system.statusItem(withLength:NSStatusItem.squareLength)
-    let listParam = "listlocations" // "listallnetworkservices"
-    let ordernetworkservices = "ordernetworkservices"
-    let switchtolocation = "switchtolocation"
+//    let listParam = "listlocations" // "listallnetworkservices"
+//    let ordernetworkservices = "ordernetworkservices"
+//    let switchtolocation = "switchtolocation"
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         if let button = statusItem.button {
@@ -37,7 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate {
 
     @objc func switchLocation(_ sender: NSMenuItem) {
-        self.setNetworkLocation(location: sender.title)
+        self.changeServiceOrder()
     }
 
     func constructMenu() {
@@ -63,12 +65,60 @@ extension AppDelegate {
 
 extension AppDelegate {
 
-    func setNetworkLocation(location:String){
-        guard let preferences = SCPreferencesCreate(nil, "Erkan" as CFString, nil) else {
-            fatalError("No")
+    func getAuthorizedPreferenceRef() -> SCPreferences? {
+
+        guard self.preferences == nil else {
+            return self.preferences
         }
 
-        //        SCPreferencesLock(preferences, true)
+        guard let authRef = self.getAuthRef() else {
+            dialogOKCancel(question: "OK", text: "Auth error")
+            return nil
+        }
+
+        if ( geteuid() != 0 ) {
+            self.preferences = SCPreferencesCreateWithAuthorization(nil, self.appName as CFString, nil, authRef)!
+        } else {
+            self.preferences = SCPreferencesCreate(nil, self.appName as CFString, nil)!
+        }
+
+        return self.preferences
+    }
+
+    func commitPref(preferences : SCPreferences){
+
+        guard SCPreferencesLock(preferences, true) else {
+            let error = SCCopyLastError()
+            print(error)
+            dialogOKCancel(question: "OK", text: "Lock : \(error)")
+            return
+        }
+
+        if !SCPreferencesCommitChanges(preferences) {
+            let error = SCCopyLastError()
+            print(error)
+            dialogOKCancel(question: "OK", text: "Commit : \(error)")
+        }
+
+        if !SCPreferencesApplyChanges(preferences) {
+            let error = SCCopyLastError()
+            print(error)
+            dialogOKCancel(question: "OK", text: "Apply : \(error)")
+        }
+
+        guard SCPreferencesUnlock(preferences) else {
+            let error = SCCopyLastError()
+            print(error)
+            dialogOKCancel(question: "OK", text: "Unlock : \(error)")
+            return
+        }
+    }
+
+    func changeServiceOrder(){
+        guard let preferences = self.getAuthorizedPreferenceRef() else {
+            dialogOKCancel(question: "OK", text: "Preferences couln't created")
+            return
+        }
 
         guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
             fatalError("No set")
@@ -76,8 +126,6 @@ extension AppDelegate {
         guard let order = SCNetworkSetGetServiceOrder(networkSet) else {
             fatalError("No order")
         }
-
-        print("Network Set:",SCNetworkSetGetName(networkSet))
 
         let mutableOrder : NSMutableArray = (order as NSArray).mutableCopy() as! NSMutableArray
 
@@ -89,35 +137,12 @@ extension AppDelegate {
 
         assert(SCNetworkSetSetServiceOrder(networkSet, mutableOrder) == true)
 
-        //        let la = LAContext()
-        //
-        //        la.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Evaluate") { (result, error) in
-        //            if error != nil {
-        //                print("LA error :", error)
-        //                return
-        //            }
-
-        //        assert(SCPreferencesUnlock(preferences) == true)
-        DispatchQueue.main.async {
-            if !SCPreferencesCommitChanges(preferences) {
-                print("Error:",SCCopyLastError())
-            }
-
-            if !SCPreferencesApplyChanges(preferences) {
-                print("Error:",SCCopyLastError())
-            }
-        }
-        //        }
-
-
-
-        //        }
-
+        self.commitPref(preferences: preferences)
 
     }
 
     func getNetworkLocationNames() -> [String] {
-        guard let preferences = SCPreferencesCreate(nil, "Erkan" as CFString, nil) else {
+        guard let preferences = SCPreferencesCreate(nil, self.appName as CFString, nil) else {
             fatalError("No")
         }
         guard let networkSetArray = SCNetworkSetCopyAll(preferences) else {
@@ -132,8 +157,6 @@ extension AppDelegate {
                 print("no name")
                 continue
             }
-            //            let order = SCNetworkSetGetServiceOrder(networkSet)
-            //        let a = SCNetworkInterfaceCopyAll()
 
             names.append(name as String)
 
@@ -142,9 +165,39 @@ extension AppDelegate {
         return names
     }
 
-
     func getCurrentNetworkSetServicesNames() -> [String]? {
-        let appName = "io.ervanux.NetworkSwitcher"
+
+        let preferences = SCPreferencesCreate(nil, appName as CFString, nil)!
+
+        guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
+            fatalError("No")
+        }
+
+        print("CurrentSetName:",SCNetworkSetGetName(networkSet)!)
+
+        guard let networkServices = SCNetworkSetCopyServices(networkSet) else {
+            fatalError("No")
+        }
+
+        let length = CFArrayGetCount(networkServices)
+        var names = [String]()
+        for index in 0...length-1 {
+            let networkService = unsafeBitCast(CFArrayGetValueAtIndex(networkServices, index), to: SCNetworkService.self)
+
+            guard let name = SCNetworkServiceGetName(networkService) else {
+                print("no name")
+                continue
+            }
+
+            names.append(name as String)
+
+        }
+
+        return names
+    }
+
+    func getAuthRef() -> AuthorizationRef? {
+
         let rightname = "com.apple.SystemConfiguration"
 
         var status: OSStatus
@@ -171,92 +224,7 @@ extension AppDelegate {
             return nil
         }
 
-        var preferences : SCPreferences
-        if ( geteuid() != 0 ) {
-            preferences = SCPreferencesCreateWithAuthorization(nil, appName as CFString, nil, authref)!;
-        } else {
-            preferences = SCPreferencesCreate(nil, appName as CFString, nil)!
-        }
-        guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
-            fatalError("No")
-        }
-
-        print("CurrentSetName:",SCNetworkSetGetName(networkSet)!)
-
-        guard let networkServices = SCNetworkSetCopyServices(networkSet) else {
-            fatalError("No")
-        }
-
-        let length = CFArrayGetCount(networkServices)
-        var names = [String]()
-        for index in 0...length-1 {
-            let networkService = unsafeBitCast(CFArrayGetValueAtIndex(networkServices, index), to: SCNetworkService.self)
-
-            guard let name = SCNetworkServiceGetName(networkService) else {
-                print("no name")
-                continue
-            }
-
-
-            if (name as String).contains("iPhone") {
-                assert(SCNetworkServiceRemove(networkService) == true)
-
-                guard SCPreferencesLock(preferences, true) else {
-                    let error = SCCopyLastError()
-                    print(error)
-                    dialogOKCancel(question: "OK", text: "Lock : \(error)")
-                    return nil
-                }
-
-                if !SCPreferencesCommitChanges(preferences) {
-                    let error = SCCopyLastError()
-                    print(error)
-                    dialogOKCancel(question: "OK", text: "Commit : \(error)")
-                }
-
-                if !SCPreferencesApplyChanges(preferences) {
-                    let error = SCCopyLastError()
-                    print(error)
-                    dialogOKCancel(question: "OK", text: "Apply : \(error)")
-                }
-
-                guard SCPreferencesUnlock(preferences) else {
-                    let error = SCCopyLastError()
-                    print(error)
-                    dialogOKCancel(question: "OK", text: "Unlock : \(error)")
-                    return nil
-                }
-
-            }
-
-            names.append(name as String)
-
-        }
-
-        return names
-    }
-
-    func admin() -> OSStatus {
-
-        let rightname = "com.apple.SystemConfiguration"
-
-        var status: OSStatus
-
-        var authref: AuthorizationRef?
-        let flags = AuthorizationFlags([.interactionAllowed, .extendRights, .preAuthorize])
-        status = AuthorizationCreate(nil, nil, flags, &authref)
-        assert(status == errAuthorizationSuccess)
-
-        var item = AuthorizationItem(name: rightname, valueLength: 0, value: nil, flags: 0)
-        var rights = AuthorizationRights(count: 1, items: &item)
-        status = AuthorizationCopyRights(authref!, &rights, nil, flags, nil)
-        assert(status == errAuthorizationSuccess)
-
-        var token = AuthorizationExternalForm()
-        status = AuthorizationMakeExternalForm(authref!, &token)
-        assert(status == errAuthorizationSuccess)
-
-        return status
+        return authref
     }
 
 }
@@ -275,57 +243,3 @@ extension AppDelegate {
     }
 
 }
-
-/**
- extension AppDelegate {
-
- func shell(launchPath: String, arguments: [String]) -> String {
-
- let task = Process()
- task.launchPath = launchPath
- task.arguments = arguments
-
- let pipe = Pipe()
- task.standardOutput = pipe
- task.launch()
-
- let data = pipe.fileHandleForReading.readDataToEndOfFile()
- let output = String(data: data, encoding: String.Encoding.utf8)!
- if output.count > 0 {
- //remove newline character.
- let lastIndex = output.index(before: output.endIndex)
- return String(output[output.startIndex ..< lastIndex])
- }
- return output
- }
-
- func admin() {
-
- let rightname = "sys.openfile.readonly./tmp/cantread.txt"
-
- var status: OSStatus
-
- var authref: AuthorizationRef?
- let flags = AuthorizationFlags([.interactionAllowed, .extendRights, .preAuthorize])
- status = AuthorizationCreate(nil, nil, flags, &authref)
- assert(status == errAuthorizationSuccess)
-
- var item = AuthorizationItem(name: rightname, valueLength: 0, value: nil, flags: 0)
- var rights = AuthorizationRights(count: 1, items: &item)
- status = AuthorizationCopyRights(authref!, &rights, nil, flags, nil)
- assert(status == errAuthorizationSuccess)
-
- var token = AuthorizationExternalForm()
- status = AuthorizationMakeExternalForm(authref!, &token)
- assert(status == errAuthorizationSuccess)
-
- }
-
- func bash(command: String, arguments: [String]) -> String {
- let whichPathForCommand = shell(launchPath: "/bin/bash", arguments: [ "-l", "-c", "which \(command)" ])
- return shell(launchPath: whichPathForCommand, arguments: arguments)
- }
-
- }
-
- **/
