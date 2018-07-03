@@ -22,10 +22,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 //    let switchtolocation = "switchtolocation"
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        if let button = statusItem.button {
-            button.image = NSImage(named:NSImage.Name("StatusBarButtonImage"))
-            //            button.action = #selector(setWifi(_:))
-        }
+//        if let button = statusItem.button {
+//            button.image = NSImage(named:NSImage.Name("StatusBarButtonImage"))
+//            //            button.action = #selector(setWifi(_:))
+//        }
         constructMenu()
     }
 
@@ -50,8 +50,8 @@ extension AppDelegate {
             return
         }
 
-        if let button = statusItem.button {
-            button.image = NSImage(named:NSImage.Name(result[0]))
+        if let button = statusItem.button, let icon = self.getActiveName() {
+            button.image = NSImage(named:NSImage.Name(icon))
             //            button.action = #selector(setWifi(_:))
         }
 
@@ -117,6 +117,28 @@ extension AppDelegate {
             dialogOKCancel(question: "OK", text: "Unlock : \(error)")
             return
         }
+    }
+
+    func getActiveName() -> String? {
+        guard let preferences = SCPreferencesCreate(nil, self.appName as CFString, nil) else {
+            fatalError("No preference")
+        }
+
+
+        guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
+            fatalError("No set")
+        }
+
+        guard let order = SCNetworkSetGetServiceOrder(networkSet) else {
+            fatalError("No order")
+        }
+
+        let mutableOrder : NSMutableArray = (order as NSArray).mutableCopy() as! NSMutableArray
+        let networkService = SCNetworkServiceCopy(preferences, mutableOrder[0] as! CFString)
+        guard let name = SCNetworkServiceGetName(networkService!) else {
+            return nil
+        }
+        return name as String
     }
 
     func changeServiceOrder(){
