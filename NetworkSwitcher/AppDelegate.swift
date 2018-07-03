@@ -8,6 +8,8 @@
 
 import Cocoa
 import SystemConfiguration
+//import LocalAuthentication
+import Security.Authorization
 
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -41,7 +43,11 @@ extension AppDelegate {
     func constructMenu() {
         let menu = NSMenu()
 
-        let result = self.getCurrentNetworkSetServicesNames()
+        guard let result = self.getCurrentNetworkSetServicesNames() else {
+//            print("No result")
+            return
+        }
+
         for item in result {
             menu.addItem(NSMenuItem(title: String(item), action: #selector(AppDelegate.switchLocation(_:)), keyEquivalent: ""))
         }
@@ -62,7 +68,7 @@ extension AppDelegate {
             fatalError("No")
         }
 
-//        SCPreferencesLock(preferences, true)
+        //        SCPreferencesLock(preferences, true)
 
         guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
             fatalError("No set")
@@ -83,10 +89,25 @@ extension AppDelegate {
 
         assert(SCNetworkSetSetServiceOrder(networkSet, mutableOrder) == true)
 
-//        assert(SCPreferencesUnlock(preferences) == true)
-        assert(SCPreferencesCommitChanges(preferences) == true)
-        assert(SCPreferencesApplyChanges(preferences) == true)
+        //        let la = LAContext()
+        //
+        //        la.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Evaluate") { (result, error) in
+        //            if error != nil {
+        //                print("LA error :", error)
+        //                return
+        //            }
 
+        //        assert(SCPreferencesUnlock(preferences) == true)
+        DispatchQueue.main.async {
+            if !SCPreferencesCommitChanges(preferences) {
+                print("Error:",SCCopyLastError())
+            }
+
+            if !SCPreferencesApplyChanges(preferences) {
+                print("Error:",SCCopyLastError())
+            }
+        }
+        //        }
 
 
 
@@ -122,15 +143,45 @@ extension AppDelegate {
     }
 
 
-    func getCurrentNetworkSetServicesNames() -> [String] {
-        guard let preferences = SCPreferencesCreate(nil, "Erkan" as CFString, nil) else {
-            fatalError("No")
+    func getCurrentNetworkSetServicesNames() -> [String]? {
+        let appName = "io.ervanux.NetworkSwitcher"
+        let rightname = "com.apple.SystemConfiguration"
+
+        var status: OSStatus
+
+        var authref: AuthorizationRef?
+        let flags = AuthorizationFlags([.interactionAllowed, .extendRights, .preAuthorize])
+        status = AuthorizationCreate(nil, nil, flags, &authref)
+        assert(status == errAuthorizationSuccess)
+
+        var item = AuthorizationItem(name: rightname, valueLength: 0, value: nil, flags: 0)
+        var rights = AuthorizationRights(count: 1, items: &item)
+        status = AuthorizationCopyRights(authref!, &rights, nil, flags, nil)
+        assert(status == errAuthorizationSuccess)
+
+        var token = AuthorizationExternalForm()
+        status = AuthorizationMakeExternalForm(authref!, &token)
+        assert(status == errAuthorizationSuccess)
+
+        guard status == errAuthorizationSuccess  else {
+            print(status)
+            let error = SCCopyLastError()
+            print(error)
+            dialogOKCancel(question: "OK", text: "Auth : \(error)")
+            return nil
+        }
+
+        var preferences : SCPreferences
+        if ( geteuid() != 0 ) {
+            preferences = SCPreferencesCreateWithAuthorization(nil, appName as CFString, nil, authref)!;
+        } else {
+            preferences = SCPreferencesCreate(nil, appName as CFString, nil)!
         }
         guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
             fatalError("No")
         }
 
-        print("CurrentSetName:",SCNetworkSetGetName(networkSet))
+        print("CurrentSetName:",SCNetworkSetGetName(networkSet)!)
 
         guard let networkServices = SCNetworkSetCopyServices(networkSet) else {
             fatalError("No")
@@ -146,6 +197,38 @@ extension AppDelegate {
                 continue
             }
 
+
+            if (name as String).contains("iPhone") {
+                assert(SCNetworkServiceRemove(networkService) == true)
+
+                guard SCPreferencesLock(preferences, true) else {
+                    let error = SCCopyLastError()
+                    print(error)
+                    dialogOKCancel(question: "OK", text: "Lock : \(error)")
+                    return nil
+                }
+
+                if !SCPreferencesCommitChanges(preferences) {
+                    let error = SCCopyLastError()
+                    print(error)
+                    dialogOKCancel(question: "OK", text: "Commit : \(error)")
+                }
+
+                if !SCPreferencesApplyChanges(preferences) {
+                    let error = SCCopyLastError()
+                    print(error)
+                    dialogOKCancel(question: "OK", text: "Apply : \(error)")
+                }
+
+                guard SCPreferencesUnlock(preferences) else {
+                    let error = SCCopyLastError()
+                    print(error)
+                    dialogOKCancel(question: "OK", text: "Unlock : \(error)")
+                    return nil
+                }
+
+            }
+
             names.append(name as String)
 
         }
@@ -153,7 +236,46 @@ extension AppDelegate {
         return names
     }
 
+    func admin() -> OSStatus {
+
+        let rightname = "com.apple.SystemConfiguration"
+
+        var status: OSStatus
+
+        var authref: AuthorizationRef?
+        let flags = AuthorizationFlags([.interactionAllowed, .extendRights, .preAuthorize])
+        status = AuthorizationCreate(nil, nil, flags, &authref)
+        assert(status == errAuthorizationSuccess)
+
+        var item = AuthorizationItem(name: rightname, valueLength: 0, value: nil, flags: 0)
+        var rights = AuthorizationRights(count: 1, items: &item)
+        status = AuthorizationCopyRights(authref!, &rights, nil, flags, nil)
+        assert(status == errAuthorizationSuccess)
+
+        var token = AuthorizationExternalForm()
+        status = AuthorizationMakeExternalForm(authref!, &token)
+        assert(status == errAuthorizationSuccess)
+
+        return status
+    }
+
 }
+
+extension AppDelegate {
+
+    @discardableResult
+    func dialogOKCancel(question: String, text: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = question
+        alert.informativeText = text
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+}
+
 /**
  extension AppDelegate {
 
