@@ -50,6 +50,11 @@ extension AppDelegate {
             return
         }
 
+        if let button = statusItem.button {
+            button.image = NSImage(named:NSImage.Name(result[0]))
+            //            button.action = #selector(setWifi(_:))
+        }
+
         for item in result {
             menu.addItem(NSMenuItem(title: String(item), action: #selector(AppDelegate.switchLocation(_:)), keyEquivalent: ""))
         }
@@ -138,7 +143,7 @@ extension AppDelegate {
         assert(SCNetworkSetSetServiceOrder(networkSet, mutableOrder) == true)
 
         self.commitPref(preferences: preferences)
-
+        self.constructMenu()
     }
 
     func getNetworkLocationNames() -> [String] {
