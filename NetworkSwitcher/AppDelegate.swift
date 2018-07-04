@@ -102,23 +102,16 @@ extension AppDelegate {
 
     func commitPref(preferences : SCPreferences){
 
-        guard SCPreferencesLock(preferences, true) else {
-            showPopup(text: "Lock : \(SCCopyLastError())")
-            return
+        guard SCPreferencesLock(preferences, true),
+            SCPreferencesCommitChanges(preferences),
+            SCPreferencesApplyChanges(preferences),
+            SCPreferencesUnlock(preferences)
+            else {
+                showPopup(text: "Lock : \(SCCopyLastError())")
+                self.preferences = nil
+                return
         }
 
-        if !SCPreferencesCommitChanges(preferences) {
-            showPopup(text: "Commit : \(SCCopyLastError())")
-        }
-
-        if !SCPreferencesApplyChanges(preferences) {
-            showPopup(text: "Apply : \(SCCopyLastError())")
-        }
-
-        guard SCPreferencesUnlock(preferences) else {
-            showPopup(text: "Unlock : \(SCCopyLastError())")
-            return
-        }
     }
 
     func getActiveName() -> String? {
