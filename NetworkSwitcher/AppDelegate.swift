@@ -31,7 +31,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate {
 
     @objc @IBAction func switchLocation(_ sender: NSMenuItem) {
-        self.changeServiceOrder()
+        if sender.title == "Toogle" {
+            self.changeServiceOrder()
+        } else {
+            self.setSpesificService(title: sender.title)
+        }
     }
 
     func constructMenu() {
@@ -42,7 +46,12 @@ extension AppDelegate {
         }
 
         if let button = statusItem.button {
-            button.image = NSImage(named:NSImage.Name(activeName))
+            if activeName.contains("iPhone") || activeName.contains("iPad") {
+                button.image = NSImage(named:NSImage.Name("hotspot"))
+            } else {
+                button.image = NSImage(named:NSImage.Name(activeName))
+            }
+
             //            button.action = #selector(setWifi(_:))
         }
 
@@ -161,8 +170,45 @@ extension AppDelegate {
             fatalError("Mutablity error")
         }
 
-        let obj = mutableOrder.object(at: 1)
-        mutableOrder.removeObject(at: 1)
+        let lastObjectIndex = CFArrayGetCount(order) - 1 
+
+        let lastObject = mutableOrder.object(at: lastObjectIndex)
+        mutableOrder.removeObject(at: lastObjectIndex)
+        mutableOrder.insert(lastObject , at: 0)
+        print("Initial Order:",order)
+        print("Changed Order:",mutableOrder)
+
+        assert(SCNetworkSetSetServiceOrder(networkSet, mutableOrder) == true)
+
+        self.commitPref(preferences: preferences)
+        self.constructMenu()
+    }
+
+    func setSpesificService(title:String) {
+        guard let preferences = self.getAuthorizedPreferenceRef() else {
+            dialogOKCancel(question: "OK", text: "Preferences couln't created")
+            return
+        }
+
+        guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
+            fatalError("No set")
+        }
+        guard let order = SCNetworkSetGetServiceOrder(networkSet) else {
+            fatalError("No order")
+        }
+
+        guard let mutableOrder  = (order as NSArray).mutableCopy() as? NSMutableArray else {
+            fatalError("Mutablity error")
+        }
+
+        guard let getSelectedServiceId = self.getIdOfNetworkService(with: title, preferences: preferences) else {
+            fatalError("No selectedID")
+        }
+
+        let indexOfTargetService = mutableOrder.index(of: getSelectedServiceId)
+
+        let obj = mutableOrder.object(at: indexOfTargetService)
+        mutableOrder.removeObject(at: indexOfTargetService)
         mutableOrder.insert(obj , at: 0)
         print("Initial Order:",order)
         print("Changed Order:",mutableOrder)
@@ -198,6 +244,38 @@ extension AppDelegate {
 
         return names
     }
+
+    func getIdOfNetworkService(with targetName : String, preferences: SCPreferences) -> String? {
+        guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
+            fatalError("No")
+        }
+
+        guard let networkServices = SCNetworkSetCopyServices(networkSet) else {
+            fatalError("No")
+        }
+
+        let length = CFArrayGetCount(networkServices)
+        for index in 0...length-1 {
+            let networkService = unsafeBitCast(CFArrayGetValueAtIndex(networkServices, index), to: SCNetworkService.self)
+
+            guard let name = SCNetworkServiceGetName(networkService) else {
+                print("no name")
+                continue
+            }
+
+            if targetName == name as String {
+                guard let serviceID = SCNetworkServiceGetServiceID(networkService)  else {
+                    continue
+                }
+
+                return serviceID as String
+            }
+        }
+
+        return nil
+    }
+
+
 
     func getCurrentNetworkSetServicesNames() -> [String]? {
 
