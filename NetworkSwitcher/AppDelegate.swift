@@ -8,7 +8,6 @@
 
 import Cocoa
 import SystemConfiguration
-//import LocalAuthentication
 import Security.Authorization
 
 @NSApplicationMain
@@ -24,7 +23,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ aNotification: Notification) {
         // Insert code here to tear down your application
     }
-
 
 }
 
@@ -42,7 +40,8 @@ extension AppDelegate {
         let menu = NSMenu()
 
         guard let activeName = self.getActiveName() else {
-            fatalError("No active name")
+            showPopup(text: "No active name")
+            return
         }
 
         if let button = statusItem.button {
@@ -56,7 +55,8 @@ extension AppDelegate {
         }
 
         guard let result = self.getCurrentNetworkSetServicesNames() else {
-            fatalError("No service name")
+            showPopup(text:"No service name")
+            return
         }
 
         for item in result {
@@ -69,13 +69,13 @@ extension AppDelegate {
 
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Toogle", action: #selector(AppDelegate.switchLocation(_:)), keyEquivalent: ""))
-//        menu.addItem(NSMenuItem(title: "Toogle", action: #selector(AppDelegate.switchLocation(_:)), keyEquivalent: "Ç"))
+        //        menu.addItem(NSMenuItem(title: "Toogle", action: #selector(AppDelegate.switchLocation(_:)), keyEquivalent: "Ç"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
 
         statusItem.menu = menu
-        
     }
+
 }
 
 extension AppDelegate {
@@ -88,7 +88,7 @@ extension AppDelegate {
 
         if geteuid() != 0 {
             guard let authRef = self.getAuthRef() else {
-                dialogOKCancel(question: "OK", text: "Auth error")
+                showPopup(text: "Auth error")
                 return nil
             }
 
@@ -103,130 +103,94 @@ extension AppDelegate {
     func commitPref(preferences : SCPreferences){
 
         guard SCPreferencesLock(preferences, true) else {
-            let error = SCCopyLastError()
-            print(error)
-            dialogOKCancel(question: "OK", text: "Lock : \(error)")
+            showPopup(text: "Lock : \(SCCopyLastError())")
             return
         }
 
         if !SCPreferencesCommitChanges(preferences) {
-            let error = SCCopyLastError()
-            print(error)
-            dialogOKCancel(question: "OK", text: "Commit : \(error)")
+            showPopup(text: "Commit : \(SCCopyLastError())")
         }
 
         if !SCPreferencesApplyChanges(preferences) {
-            let error = SCCopyLastError()
-            print(error)
-            dialogOKCancel(question: "OK", text: "Apply : \(error)")
+            showPopup(text: "Apply : \(SCCopyLastError())")
         }
 
         guard SCPreferencesUnlock(preferences) else {
-            let error = SCCopyLastError()
-            print(error)
-            dialogOKCancel(question: "OK", text: "Unlock : \(error)")
+            showPopup(text: "Unlock : \(SCCopyLastError())")
             return
         }
     }
 
     func getActiveName() -> String? {
-        guard let preferences = SCPreferencesCreate(nil, self.appName as CFString, nil) else {
-            fatalError("No preference")
-        }
-
-        guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
-            fatalError("No set")
-        }
-
-        guard let order = SCNetworkSetGetServiceOrder(networkSet) else {
-            fatalError("No order")
-        }
-
-        guard let networkService = SCNetworkServiceCopy(preferences, (order as NSArray)[0] as! CFString) else {
-            fatalError("No service")
-        }
-
-        guard let name = SCNetworkServiceGetName(networkService) else {
-            fatalError("No name")
+        guard let preferences = SCPreferencesCreate(nil, appName as CFString, nil),
+            let networkSet = SCNetworkSetCopyCurrent(preferences),
+            let order = SCNetworkSetGetServiceOrder(networkSet),
+            let networkService = SCNetworkServiceCopy(preferences, (order as NSArray)[0] as! CFString),
+            let name = SCNetworkServiceGetName(networkService)
+            else {
+                showPopup(text: "Setup problem")
+                return nil
         }
 
         return name as String
     }
 
     func changeServiceOrder(){
-        guard let preferences = self.getAuthorizedPreferenceRef() else {
-            dialogOKCancel(question: "OK", text: "Preferences couln't created")
-            return
+        guard let preferences = self.getAuthorizedPreferenceRef(),
+            let networkSet = SCNetworkSetCopyCurrent(preferences),
+            let order = SCNetworkSetGetServiceOrder(networkSet),
+            let mutableOrder  = (order as NSArray).mutableCopy() as? NSMutableArray
+            else {
+                showPopup(text: "Setup problem")
+                return
         }
 
-        guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
-            fatalError("No set")
-        }
-        guard let order = SCNetworkSetGetServiceOrder(networkSet) else {
-            fatalError("No order")
-        }
-
-        guard let mutableOrder  = (order as NSArray).mutableCopy() as? NSMutableArray else {
-            fatalError("Mutablity error")
-        }
-
-        let lastObjectIndex = CFArrayGetCount(order) - 1 
+        let lastObjectIndex = CFArrayGetCount(order) - 1
 
         let lastObject = mutableOrder.object(at: lastObjectIndex)
         mutableOrder.removeObject(at: lastObjectIndex)
         mutableOrder.insert(lastObject , at: 0)
-        print("Initial Order:",order)
-        print("Changed Order:",mutableOrder)
 
-        assert(SCNetworkSetSetServiceOrder(networkSet, mutableOrder) == true)
+        guard SCNetworkSetSetServiceOrder(networkSet, mutableOrder) else {
+            showPopup(text: "Couldn't set new order")
+            return
+        }
 
         self.commitPref(preferences: preferences)
         self.constructMenu()
     }
 
     func setSpesificService(title:String) {
-        guard let preferences = self.getAuthorizedPreferenceRef() else {
-            dialogOKCancel(question: "OK", text: "Preferences couln't created")
-            return
-        }
-
-        guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
-            fatalError("No set")
-        }
-        guard let order = SCNetworkSetGetServiceOrder(networkSet) else {
-            fatalError("No order")
-        }
-
-        guard let mutableOrder  = (order as NSArray).mutableCopy() as? NSMutableArray else {
-            fatalError("Mutablity error")
-        }
-
-        guard let getSelectedServiceId = self.getIdOfNetworkService(with: title, preferences: preferences) else {
-            fatalError("No selectedID")
+        guard let preferences = self.getAuthorizedPreferenceRef(),
+            let networkSet = SCNetworkSetCopyCurrent(preferences),
+            let order = SCNetworkSetGetServiceOrder(networkSet),
+            let mutableOrder  = (order as NSArray).mutableCopy() as? NSMutableArray,
+            let getSelectedServiceId = self.getIdOfNetworkService(with: title, preferences: preferences)
+            else {
+                showPopup(text: "Setup problem")
+                return
         }
 
         let indexOfTargetService = mutableOrder.index(of: getSelectedServiceId)
-
         let obj = mutableOrder.object(at: indexOfTargetService)
         mutableOrder.removeObject(at: indexOfTargetService)
         mutableOrder.insert(obj , at: 0)
-        print("Initial Order:",order)
-        print("Changed Order:",mutableOrder)
 
-        assert(SCNetworkSetSetServiceOrder(networkSet, mutableOrder) == true)
+        guard SCNetworkSetSetServiceOrder(networkSet, mutableOrder) else {
+            showPopup(text: "Couldn't set new order")
+            return
+        }
 
         self.commitPref(preferences: preferences)
         self.constructMenu()
     }
 
-    func getNetworkLocationNames() -> [String] {
-
-        guard let preferences = SCPreferencesCreate(nil, self.appName as CFString, nil) else {
-            fatalError("No")
-        }
-
-        guard let networkSetArray = SCNetworkSetCopyAll(preferences) else {
-            fatalError("No")
+    func getNetworkLocationNames() -> [String]? {
+        guard let preferences = SCPreferencesCreate(nil, self.appName as CFString, nil),
+            let networkSetArray = SCNetworkSetCopyAll(preferences)
+            else {
+                showPopup(text:"No Names")
+                return nil
         }
 
         let length = CFArrayGetCount(networkSetArray)
@@ -234,7 +198,6 @@ extension AppDelegate {
         for index in 0...length-1 {
             let networkSet = unsafeBitCast(CFArrayGetValueAtIndex(networkSetArray, index), to: SCNetworkSet.self)
             guard let name = SCNetworkSetGetName(networkSet) else {
-                print("no name")
                 continue
             }
 
@@ -246,12 +209,11 @@ extension AppDelegate {
     }
 
     func getIdOfNetworkService(with targetName : String, preferences: SCPreferences) -> String? {
-        guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
-            fatalError("No")
-        }
-
-        guard let networkServices = SCNetworkSetCopyServices(networkSet) else {
-            fatalError("No")
+        guard let networkSet = SCNetworkSetCopyCurrent(preferences),
+            let networkServices = SCNetworkSetCopyServices(networkSet)
+            else {
+                showPopup(text:"No preferences")
+                return nil
         }
 
         let length = CFArrayGetCount(networkServices)
@@ -259,12 +221,11 @@ extension AppDelegate {
             let networkService = unsafeBitCast(CFArrayGetValueAtIndex(networkServices, index), to: SCNetworkService.self)
 
             guard let name = SCNetworkServiceGetName(networkService) else {
-                print("no name")
                 continue
             }
 
             if targetName == name as String {
-                guard let serviceID = SCNetworkServiceGetServiceID(networkService)  else {
+                guard let serviceID = SCNetworkServiceGetServiceID(networkService) else {
                     continue
                 }
 
@@ -275,38 +236,24 @@ extension AppDelegate {
         return nil
     }
 
-
-
     func getCurrentNetworkSetServicesNames() -> [String]? {
 
-        guard let preferences = SCPreferencesCreate(nil, appName as CFString, nil) else {
-            fatalError("No preferences")
-        }
-
-        guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
-            fatalError("No")
-        }
-
-//        guard let name = SCNetworkSetGetName(networkSet) else {
-//            fatalError("No name")
-//        }
-
-        guard let networkServices = SCNetworkSetCopyServices(networkSet) else {
-            fatalError("No")
+        guard let preferences = SCPreferencesCreate(nil, appName as CFString, nil),
+            let networkSet = SCNetworkSetCopyCurrent(preferences),
+            let networkServices = SCNetworkSetCopyServices(networkSet)
+            else {
+                showPopup(text:"No preferences")
+                return nil
         }
 
         let length = CFArrayGetCount(networkServices)
         var names = [String]()
         for index in 0...length-1 {
             let networkService = unsafeBitCast(CFArrayGetValueAtIndex(networkServices, index), to: SCNetworkService.self)
-
             guard let name = SCNetworkServiceGetName(networkService) else {
-                print("no name")
                 continue
             }
-
             names.append(name as String)
-
         }
 
         return names
@@ -336,7 +283,7 @@ extension AppDelegate {
             print(status)
             let error = SCCopyLastError()
             print(error)
-            dialogOKCancel(question: "OK", text: "Auth : \(error)")
+            showPopup(text: "Auth : \(error)")
             return nil
         }
 
@@ -348,13 +295,13 @@ extension AppDelegate {
 extension AppDelegate {
 
     @discardableResult
-    func dialogOKCancel(question: String, text: String) -> Bool {
+    func showPopup(title: String = "", text: String) -> Bool {
         let alert = NSAlert()
-        alert.messageText = question
+        alert.messageText = title
         alert.informativeText = text
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Cancel")
+        //        alert.addButton(withTitle: "Cancel")
         return alert.runModal() == .alertFirstButtonReturn
     }
 
