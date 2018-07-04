@@ -15,17 +15,9 @@ import Security.Authorization
 class AppDelegate: NSObject, NSApplicationDelegate {
     let appName = "io.ervanux.NetworkSwitcher"
     var preferences : SCPreferences?
-
     let statusItem = NSStatusBar.system.statusItem(withLength:NSStatusItem.squareLength)
-//    let listParam = "listlocations" // "listallnetworkservices"
-//    let ordernetworkservices = "ordernetworkservices"
-//    let switchtolocation = "switchtolocation"
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-//        if let button = statusItem.button {
-//            button.image = NSImage(named:NSImage.Name("StatusBarButtonImage"))
-//            //            button.action = #selector(setWifi(_:))
-//        }
         constructMenu()
     }
 
@@ -38,33 +30,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate {
 
-    @objc func switchLocation(_ sender: NSMenuItem) {
+    @objc @IBAction func switchLocation(_ sender: NSMenuItem) {
         self.changeServiceOrder()
     }
 
     func constructMenu() {
         let menu = NSMenu()
 
-        guard let result = self.getCurrentNetworkSetServicesNames() else {
-//            print("No result")
-            return
+        guard let activeName = self.getActiveName() else {
+            fatalError("No active name")
         }
 
-        if let button = statusItem.button, let icon = self.getActiveName() {
-            button.image = NSImage(named:NSImage.Name(icon))
+        if let button = statusItem.button {
+            button.image = NSImage(named:NSImage.Name(activeName))
             //            button.action = #selector(setWifi(_:))
         }
 
+        guard let result = self.getCurrentNetworkSetServicesNames() else {
+            fatalError("No service name")
+        }
+
         for item in result {
-            menu.addItem(NSMenuItem(title: String(item), action: #selector(AppDelegate.switchLocation(_:)), keyEquivalent: ""))
+            var title = String(item)
+            if title == activeName {
+                title = "✔︎ " + title
+            }
+            menu.addItem(NSMenuItem(title:title , action: #selector(AppDelegate.switchLocation(_:)), keyEquivalent: ""))
         }
 
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Toogle", action: #selector(AppDelegate.switchLocation(_:)), keyEquivalent: "Ç"))
+        menu.addItem(NSMenuItem(title: "Toogle", action: #selector(AppDelegate.switchLocation(_:)), keyEquivalent: ""))
+//        menu.addItem(NSMenuItem(title: "Toogle", action: #selector(AppDelegate.switchLocation(_:)), keyEquivalent: "Ç"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
 
         statusItem.menu = menu
+        
     }
 }
 
@@ -76,12 +77,12 @@ extension AppDelegate {
             return self.preferences
         }
 
-        guard let authRef = self.getAuthRef() else {
-            dialogOKCancel(question: "OK", text: "Auth error")
-            return nil
-        }
+        if geteuid() != 0 {
+            guard let authRef = self.getAuthRef() else {
+                dialogOKCancel(question: "OK", text: "Auth error")
+                return nil
+            }
 
-        if ( geteuid() != 0 ) {
             self.preferences = SCPreferencesCreateWithAuthorization(nil, self.appName as CFString, nil, authRef)!
         } else {
             self.preferences = SCPreferencesCreate(nil, self.appName as CFString, nil)!
@@ -124,7 +125,6 @@ extension AppDelegate {
             fatalError("No preference")
         }
 
-
         guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
             fatalError("No set")
         }
@@ -133,11 +133,14 @@ extension AppDelegate {
             fatalError("No order")
         }
 
-        let mutableOrder : NSMutableArray = (order as NSArray).mutableCopy() as! NSMutableArray
-        let networkService = SCNetworkServiceCopy(preferences, mutableOrder[0] as! CFString)
-        guard let name = SCNetworkServiceGetName(networkService!) else {
-            return nil
+        guard let networkService = SCNetworkServiceCopy(preferences, (order as NSArray)[0] as! CFString) else {
+            fatalError("No service")
         }
+
+        guard let name = SCNetworkServiceGetName(networkService) else {
+            fatalError("No name")
+        }
+
         return name as String
     }
 
@@ -154,7 +157,9 @@ extension AppDelegate {
             fatalError("No order")
         }
 
-        let mutableOrder : NSMutableArray = (order as NSArray).mutableCopy() as! NSMutableArray
+        guard let mutableOrder  = (order as NSArray).mutableCopy() as? NSMutableArray else {
+            fatalError("Mutablity error")
+        }
 
         let obj = mutableOrder.object(at: 1)
         mutableOrder.removeObject(at: 1)
@@ -169,9 +174,11 @@ extension AppDelegate {
     }
 
     func getNetworkLocationNames() -> [String] {
+
         guard let preferences = SCPreferencesCreate(nil, self.appName as CFString, nil) else {
             fatalError("No")
         }
+
         guard let networkSetArray = SCNetworkSetCopyAll(preferences) else {
             fatalError("No")
         }
@@ -194,13 +201,17 @@ extension AppDelegate {
 
     func getCurrentNetworkSetServicesNames() -> [String]? {
 
-        let preferences = SCPreferencesCreate(nil, appName as CFString, nil)!
+        guard let preferences = SCPreferencesCreate(nil, appName as CFString, nil) else {
+            fatalError("No preferences")
+        }
 
         guard let networkSet = SCNetworkSetCopyCurrent(preferences) else {
             fatalError("No")
         }
 
-        print("CurrentSetName:",SCNetworkSetGetName(networkSet)!)
+//        guard let name = SCNetworkSetGetName(networkSet) else {
+//            fatalError("No name")
+//        }
 
         guard let networkServices = SCNetworkSetCopyServices(networkSet) else {
             fatalError("No")
