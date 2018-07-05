@@ -54,7 +54,7 @@ extension AppDelegate {
             //            button.action = #selector(setWifi(_:))
         }
 
-        guard let result = self.getCurrentNetworkSetServicesNames() else {
+        guard let result = self.getAllServiceNames() else {
             showPopup(text:"No service name")
             return
         }
@@ -229,7 +229,7 @@ extension AppDelegate {
         return nil
     }
 
-    func getCurrentNetworkSetServicesNames() -> [String]? {
+    func getAllServiceNames() -> [String]? {
 
         guard let preferences = SCPreferencesCreate(nil, appName as CFString, nil),
             let networkSet = SCNetworkSetCopyCurrent(preferences),
