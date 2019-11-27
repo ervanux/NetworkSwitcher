@@ -47,6 +47,8 @@ extension AppDelegate {
         if let button = statusItem.button {
             if activeName.contains("iPhone") || activeName.contains("iPad") {
                 button.image = NSImage(named:NSImage.Name("hotspot"))
+            } else if activeName.lowercased().contains("usb") {
+                button.image = NSImage(named:NSImage.Name("usb"))
             } else {
                 button.image = NSImage(named:NSImage.Name(activeName))
             }

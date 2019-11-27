@@ -272,7 +272,7 @@
 				CODE_SIGN_ENTITLEMENTS = NetworkSwitcher/NetworkSwitcher.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = 8R4R826LGA;
+				DEVELOPMENT_TEAM = R85BRW5FWA;
 				INFOPLIST_FILE = NetworkSwitcher/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -292,7 +292,7 @@
 				CODE_SIGN_ENTITLEMENTS = NetworkSwitcher/NetworkSwitcher.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = 8R4R826LGA;
+				DEVELOPMENT_TEAM = R85BRW5FWA;
 				INFOPLIST_FILE = NetworkSwitcher/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
